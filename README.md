@@ -1,2 +1,2 @@
-# qr-to-barcode
-Преобразование QR в штрих
+1index.html
+README.md
