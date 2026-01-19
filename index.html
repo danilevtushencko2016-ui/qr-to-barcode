@@ -30,6 +30,19 @@ svg {
 <h2>Сканирование QR → Code-128</h2>
 
 <div id="reader"></div>
+  <div style="margin-top:15px;">
+  <label for="zoomRange">Зум камеры</label><br>
+  <input
+    type="range"
+    id="zoomRange"
+    min="1"
+    max="1"
+    step="0.1"
+    value="1"
+    disabled
+  >
+</div>
+  
 
 <p><b>Результат QR:</b></p>
 <p id="qr-result">—</p>
@@ -56,11 +69,31 @@ function onScanSuccess(decodedText) {
     displayValue: true
   });
 }
-new Html5Qrcode("reader").start(
+const html5QrCode = new Html5Qrcode("reader");
+
+html5QrCode.start(
   { facingMode: "environment" },
   { fps: 10, qrbox: 250 },
   onScanSuccess
-);
+).then(() => {
+  const videoTrack = html5QrCode._localMediaStream.getVideoTracks()[0];
+  const capabilities = videoTrack.getCapabilities();
+
+  if (capabilities.zoom) {
+    const zoomRange = document.getElementById("zoomRange");
+    zoomRange.min = capabilities.zoom.min;
+    zoomRange.max = capabilities.zoom.max;
+    zoomRange.step = 0.1;
+    zoomRange.value = capabilities.zoom.min;
+    zoomRange.disabled = false;
+
+    zoomRange.oninput = () => {
+      videoTrack.applyConstraints({
+        advanced: [{ zoom: zoomRange.value }]
+      });
+    };
+  }
+});
 </script>
 
 </body>
