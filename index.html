@@ -32,6 +32,7 @@ body {
   max-width: 320px;
   margin: auto;
   overflow: hidden;
+  position: relative;
 }
 
 #reader video {
@@ -82,6 +83,7 @@ datalist option {
 <script>
 let html5QrCode = null;
 let started = false;
+const baseQrBox = 250;
 
 function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
@@ -109,15 +111,14 @@ async function startCamera() {
   html5QrCode = new Html5Qrcode("reader");
 
   // Запуск камеры
-  const config = { fps: 10, qrbox: 250 };
+  let currentQrBox = baseQrBox;
+  const config = { fps: 10, qrbox: currentQrBox };
   await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
-  // Получаем видеотрек
   const video = document.querySelector("#reader video");
   if (!video) return;
   const track = video.srcObject.getVideoTracks()[0];
 
-  // Проверяем возможности камеры
   const capabilities = track.getCapabilities();
   const hasZoom = capabilities.zoom !== undefined;
 
@@ -125,7 +126,6 @@ async function startCamera() {
   const zoomValue = document.getElementById("zoom-value");
   const datalist = document.getElementById("zoom-ticks");
 
-  // Настройка ползунка и делений
   let minZoom, maxZoom;
   if (hasZoom) {
     minZoom = capabilities.zoom.min;
@@ -141,9 +141,8 @@ async function startCamera() {
   slider.value = minZoom;
   zoomValue.innerText = slider.value;
 
-  // Генерация делений на ползунке
   datalist.innerHTML = "";
-  const steps = 5; // количество отметок
+  const steps = 5;
   for (let i = 0; i <= steps; i++) {
     const val = (minZoom + i * (maxZoom - minZoom) / steps).toFixed(1);
     const option = document.createElement("option");
@@ -157,23 +156,29 @@ async function startCamera() {
     const zoom = parseFloat(slider.value);
 
     if (hasZoom) {
-      // Реальный zoom камеры
       try {
         await track.applyConstraints({ advanced: [{ zoom }] });
       } catch (err) {
         console.log("Ошибка zoom:", err);
       }
     } else {
-      // Fallback: CSS масштабирование видео
+      // CSS масштабирование видео
       video.style.transform = `scale(${zoom})`;
       video.style.transformOrigin = "center center";
+
+      // Плавное изменение qrbox без остановки сканера
+      const qrRegion = html5QrCode._qrRegion; // внутренний контейнер qrbox
+      if (qrRegion) {
+        const newSize = baseQrBox * zoom;
+        qrRegion.style.width = `${newSize}px`;
+        qrRegion.style.height = `${newSize}px`;
+      }
     }
 
     zoomValue.innerText = zoom.toFixed(1);
   });
 }
 
-// ЛЮБОЕ касание экрана
 document.getElementById("overlay").addEventListener("click", startCamera);
 document.getElementById("overlay").addEventListener("touchstart", startCamera);
 </script>
