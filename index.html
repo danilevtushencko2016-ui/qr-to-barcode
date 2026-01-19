@@ -71,10 +71,47 @@ function onScanSuccess(decodedText) {
 }
 const html5QrCode = new Html5Qrcode("reader");
 
-html5QrCode.start(
-  { facingMode: "environment" },
-  { fps: 10, qrbox: 250 },
-  onScanSuccess
+let currentZoom = 1;
+let html5QrCode;
+
+function startCamera(zoom = 1) {
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => {
+      html5QrCode.clear();
+      initCamera(zoom);
+    });
+  } else {
+    initCamera(zoom);
+  }
+}
+
+function initCamera(zoom) {
+  html5QrCode = new Html5Qrcode("reader");
+
+  html5QrCode.start(
+    {
+      facingMode: "environment",
+      advanced: [{ zoom: zoom }]
+    },
+    { fps: 10, qrbox: 250 },
+    onScanSuccess
+  );
+}
+
+const zoomRange = document.getElementById("zoomRange");
+
+zoomRange.disabled = false;
+zoomRange.min = 1;
+zoomRange.max = 4;
+zoomRange.step = 0.1;
+zoomRange.value = 1;
+
+zoomRange.oninput = () => {
+  currentZoom = parseFloat(zoomRange.value);
+  startCamera(currentZoom);
+};
+
+startCamera(1);
 ).then(() => {
   const videoTrack = html5QrCode._localMediaStream.getVideoTracks()[0];
   const capabilities = videoTrack.getCapabilities();
