@@ -5,7 +5,6 @@
 <title>QR → Code 128</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 
 <style>
@@ -31,14 +30,12 @@ body {
   width: 100%;
   max-width: 320px;
   margin: auto;
-  overflow: hidden;
   position: relative;
 }
 
-#reader video {
+#reader video, #reader canvas {
   width: 100%;
   height: auto;
-  display: none; /* видео скрыто на Android, т.к. canvas будет показывать */
 }
 
 #zoom-container {
@@ -53,28 +50,17 @@ datalist {
   display: flex;
   justify-content: space-between;
 }
-datalist option {
-  display: block;
-}
 
 #android-tip {
   color: red;
   font-size: 14px;
   display: none;
 }
-
-canvas {
-  width: 100%;
-  height: auto;
-}
 </style>
 </head>
-
 <body>
 
-<div id="overlay">
-  Коснитесь экрана, чтобы включить камеру
-</div>
+<div id="overlay">Коснитесь экрана, чтобы включить камеру</div>
 
 <h2>Сканирование QR → Code-128</h2>
 
@@ -82,11 +68,10 @@ canvas {
 
 <div id="zoom-container" style="display:none;">
   <b>Zoom:</b> <span id="zoom-value">1</span><br>
-  <input type="range" id="zoom-slider" list="zoom-ticks" step="0.1" value="1">
-  <datalist id="zoom-ticks"></datalist>
+  <input type="range" id="zoom-slider" step="0.1" value="1" min="1" max="3">
 </div>
 
-<p id="android-tip">Zoom через ползунок работает на этом устройстве.</p>
+<p id="android-tip">Используйте ползунок для увеличения. Поднесите камеру ближе к QR.</p>
 
 <p><b>Результат QR:</b></p>
 <p id="qr-result">—</p>
@@ -94,133 +79,114 @@ canvas {
 <svg id="barcode"></svg>
 
 <script>
-let html5QrCode = null;
-let started = false;
-const baseQrBox = 250;
-let lastBarcode = "";
-
-// Для псевдо-zoom на Android
+let video = null;
 let canvas = null;
 let ctx = null;
+let zoom = 1;
+let lastBarcode = "";
+let detector = null;
 
-function onScanSuccess(decodedText) {
-  const parts = decodedText.split(";");
-  const barcodeValue = parts.length > 1 ? parts[1] : "";
-  if (!barcodeValue || barcodeValue === lastBarcode) return;
-
-  lastBarcode = barcodeValue;
-
-  document.getElementById("qr-result").innerText = decodedText;
-
+// Отображение штрихкода
+function updateBarcode(value) {
+  if (!value || value === lastBarcode) return;
+  lastBarcode = value;
+  document.getElementById("qr-result").innerText = value;
   const svg = document.getElementById("barcode");
   svg.innerHTML = "";
-  JsBarcode(svg, barcodeValue, {
+  JsBarcode(svg, value, {
     format: "CODE128",
     width: 2,
     height: 80,
     displayValue: true,
-    text: barcodeValue
+    text: value
   });
 }
 
-async function startCamera() {
-  if (started) return;
-  started = true;
+// Сканирование через BarcodeDetector (canvas)
+async function scanLoop() {
+  if (!video || !canvas || !detector) return;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  canvas.width = vw;
+  canvas.height = vh;
 
+  ctx.save();
+  ctx.scale(zoom, zoom);
+  ctx.drawImage(video, 0, 0, vw / zoom, vh / zoom);
+  ctx.restore();
+
+  try {
+    const results = await detector.detect(canvas);
+    if (results.length) {
+      // Берем первый QR или Code128
+      updateBarcode(results[0].rawValue);
+    }
+  } catch(e) {
+    // Ошибка сканирования, продолжаем
+  }
+  requestAnimationFrame(scanLoop);
+}
+
+async function startCamera() {
   document.getElementById("overlay").style.display = "none";
 
-  html5QrCode = new Html5Qrcode("reader");
+  // Создаём video
+  video = document.createElement("video");
+  video.autoplay = true;
+  video.playsInline = true;
+  document.getElementById("reader").appendChild(video);
 
-  // Запуск камеры
-  const config = { fps: 10, qrbox: baseQrBox };
-  await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
+  // Запрос камеры
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  video.srcObject = stream;
 
-  const video = document.querySelector("#reader video");
-  video.style.display = "block"; // показываем видео для iPhone, Android скроет через canvas
-  const track = video.srcObject.getVideoTracks()[0];
+  const track = stream.getVideoTracks()[0];
   const capabilities = track.getCapabilities();
   const hasZoom = capabilities.zoom !== undefined;
 
   const slider = document.getElementById("zoom-slider");
   const zoomValue = document.getElementById("zoom-value");
-  const datalist = document.getElementById("zoom-ticks");
   const androidTip = document.getElementById("android-tip");
 
   if (hasZoom) {
-    // Настоящий zoom доступен
-    let minZoom = capabilities.zoom.min;
-    let maxZoom = capabilities.zoom.max;
-
-    slider.min = minZoom;
-    slider.max = maxZoom;
+    // Реальный zoom камеры
+    slider.min = capabilities.zoom.min;
+    slider.max = capabilities.zoom.max;
     slider.step = 0.1;
-    slider.value = minZoom;
+    slider.value = capabilities.zoom.min;
     zoomValue.innerText = slider.value;
-
-    datalist.innerHTML = "";
-    const steps = 5;
-    for (let i = 0; i <= steps; i++) {
-      const val = (minZoom + i * (maxZoom - minZoom) / steps).toFixed(1);
-      const option = document.createElement("option");
-      option.value = val;
-      datalist.appendChild(option);
-    }
-
     document.getElementById("zoom-container").style.display = "block";
 
     slider.addEventListener("input", async () => {
-      const zoom = parseFloat(slider.value);
-      try {
-        await track.applyConstraints({ advanced: [{ zoom }] });
-      } catch (err) {
-        console.log("Ошибка zoom:", err);
-      }
+      zoom = parseFloat(slider.value);
       zoomValue.innerText = zoom.toFixed(1);
+      try { await track.applyConstraints({ advanced: [{ zoom }] }); } catch(e){console.log(e);}
     });
+
+    // Используем BarcodeDetector для сканирования прямо с video
+    try { detector = new BarcodeDetector({ formats: ['qr_code', 'code_128'] }); } catch(e) { detector = null; }
+    if (!detector) {
+      androidTip.innerText = "Ваш браузер не поддерживает BarcodeDetector. QR-сканирование может не работать.";
+      androidTip.style.display = "block";
+    }
+    scanLoop();
   } else {
     // Псевдо-zoom через canvas для Android
-    androidTip.style.display = "block";
-    slider.min = 1;
-    slider.max = 3;
-    slider.step = 0.1;
-    slider.value = 1;
-    zoomValue.innerText = slider.value;
-    document.getElementById("zoom-container").style.display = "block";
-
-    // создаём canvas для сканирования
     canvas = document.createElement("canvas");
     ctx = canvas.getContext("2d");
     document.getElementById("reader").appendChild(canvas);
-    video.style.display = "none"; // скрываем исходное видео
+    video.style.display = "none";
+    androidTip.style.display = "block";
+    document.getElementById("zoom-container").style.display = "block";
 
-    // рисуем и сканируем каждые 100ms
-    let zoom = 1;
     slider.addEventListener("input", () => {
       zoom = parseFloat(slider.value);
       zoomValue.innerText = zoom.toFixed(1);
     });
 
-    const scanLoop = async () => {
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
-      canvas.width = vw;
-      canvas.height = vh;
-
-      ctx.save();
-      ctx.scale(zoom, zoom);
-      ctx.drawImage(video, 0, 0, vw / zoom, vh / zoom);
-      ctx.restore();
-
-      try {
-        const result = await html5QrCode.scanFileOrCanvas(canvas);
-        if (result) onScanSuccess(result);
-      } catch(e) {
-        // ничего не делать, просто продолжаем скан
-      }
-
-      requestAnimationFrame(scanLoop);
-    };
-
+    try { detector = new BarcodeDetector({ formats: ['qr_code', 'code_128'] }); } catch(e) {
+      androidTip.innerText = "Ваш браузер не поддерживает BarcodeDetector. QR-сканирование не будет работать.";
+    }
     scanLoop();
   }
 }
