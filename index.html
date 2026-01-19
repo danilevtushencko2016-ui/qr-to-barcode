@@ -22,6 +22,19 @@ body {
 svg {
   margin-top: 20px;
 }
+  #zoomRange {
+  width: 90%;
+  max-width: 320px;
+  position: relative;
+  z-index: 1000;
+  pointer-events: auto;
+  touch-action: pan-x;
+}
+
+#reader {
+  position: relative;
+  z-index: 1;
+}
 </style>
 </head>
 
@@ -29,17 +42,15 @@ svg {
 
 <h2>Сканирование QR → Code-128</h2>
 
-<div id="reader"></div>
-  <div style="margin-top:15px;">
+<div id="zoomContainer" style="margin-top:15px; position: relative; z-index: 1000;">
   <label for="zoomRange">Зум камеры</label><br>
   <input
     type="range"
     id="zoomRange"
     min="1"
-    max="1"
+    max="4"
     step="0.1"
     value="1"
-    disabled
   >
 </div>
   
