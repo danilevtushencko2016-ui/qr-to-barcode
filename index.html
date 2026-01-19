@@ -31,10 +31,29 @@ body {
   width: 100%;
   max-width: 320px;
   margin: auto;
+  overflow: hidden;
+}
+
+#reader video {
+  width: 100%;
+  height: auto;
+  transition: transform 0.2s ease;
 }
 
 #zoom-container {
   margin: 10px 0;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+datalist {
+  display: flex;
+  justify-content: space-between;
+}
+datalist option {
+  display: block;
 }
 </style>
 </head>
@@ -51,7 +70,8 @@ body {
 
 <div id="zoom-container" style="display:none;">
   <b>Zoom:</b> <span id="zoom-value">1</span><br>
-  <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1">
+  <input type="range" id="zoom-slider" list="zoom-ticks" step="0.1" value="1">
+  <datalist id="zoom-ticks"></datalist>
 </div>
 
 <p><b>Результат QR:</b></p>
@@ -88,33 +108,65 @@ async function startCamera() {
 
   html5QrCode = new Html5Qrcode("reader");
 
-  // Запускаем камеру стандартно через Html5Qrcode
+  // Запуск камеры
   const config = { fps: 10, qrbox: 250 };
   await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
-  // Получаем видеотрек камеры
+  // Получаем видеотрек
   const video = document.querySelector("#reader video");
   if (!video) return;
   const track = video.srcObject.getVideoTracks()[0];
 
-  // Показываем ползунок zoom
-  const zoomContainer = document.getElementById("zoom-container");
-  zoomContainer.style.display = "block";
+  // Проверяем возможности камеры
+  const capabilities = track.getCapabilities();
+  const hasZoom = capabilities.zoom !== undefined;
 
   const slider = document.getElementById("zoom-slider");
   const zoomValue = document.getElementById("zoom-value");
+  const datalist = document.getElementById("zoom-ticks");
+
+  // Настройка ползунка и делений
+  let minZoom, maxZoom;
+  if (hasZoom) {
+    minZoom = capabilities.zoom.min;
+    maxZoom = capabilities.zoom.max;
+  } else {
+    minZoom = 1;
+    maxZoom = 3;
+  }
+
+  slider.min = minZoom;
+  slider.max = maxZoom;
+  slider.step = 0.1;
+  slider.value = minZoom;
+  zoomValue.innerText = slider.value;
+
+  // Генерация делений на ползунке
+  datalist.innerHTML = "";
+  const steps = 5; // количество отметок
+  for (let i = 0; i <= steps; i++) {
+    const val = (minZoom + i * (maxZoom - minZoom) / steps).toFixed(1);
+    const option = document.createElement("option");
+    option.value = val;
+    datalist.appendChild(option);
+  }
+
+  document.getElementById("zoom-container").style.display = "block";
 
   slider.addEventListener("input", async () => {
-    const capabilities = track.getCapabilities();
-    let zoom = parseFloat(slider.value);
+    const zoom = parseFloat(slider.value);
 
-    if (capabilities.zoom) {
-      zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, zoom));
+    if (hasZoom) {
+      // Реальный zoom камеры
       try {
         await track.applyConstraints({ advanced: [{ zoom }] });
       } catch (err) {
         console.log("Ошибка zoom:", err);
       }
+    } else {
+      // Fallback: CSS масштабирование видео
+      video.style.transform = `scale(${zoom})`;
+      video.style.transformOrigin = "center center";
     }
 
     zoomValue.innerText = zoom.toFixed(1);
