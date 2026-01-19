@@ -84,16 +84,21 @@ datalist option {
 let html5QrCode = null;
 let started = false;
 const baseQrBox = 250;
+let lastBarcode = ""; // Для отслеживания повторных сканов
 
 function onScanSuccess(decodedText) {
-  document.getElementById("qr-result").innerText = decodedText;
-
   const parts = decodedText.split(";");
   const barcodeValue = parts.length > 1 ? parts[1] : "";
+  if (!barcodeValue || barcodeValue === lastBarcode) return;
 
-  if (!barcodeValue) return;
+  lastBarcode = barcodeValue;
 
-  JsBarcode("#barcode", barcodeValue, {
+  document.getElementById("qr-result").innerText = decodedText;
+
+  const svg = document.getElementById("barcode");
+  svg.innerHTML = ""; // очищаем предыдущий штрихкод
+
+  JsBarcode(svg, barcodeValue, {
     format: "CODE128",
     width: 2,
     height: 80,
@@ -111,8 +116,7 @@ async function startCamera() {
   html5QrCode = new Html5Qrcode("reader");
 
   // Запуск камеры
-  let currentQrBox = baseQrBox;
-  const config = { fps: 10, qrbox: currentQrBox };
+  const config = { fps: 10, qrbox: baseQrBox };
   await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
   const video = document.querySelector("#reader video");
@@ -162,12 +166,12 @@ async function startCamera() {
         console.log("Ошибка zoom:", err);
       }
     } else {
-      // CSS масштабирование видео
+      // CSS визуальный zoom
       video.style.transform = `scale(${zoom})`;
       video.style.transformOrigin = "center center";
 
       // Плавное изменение qrbox без остановки сканера
-      const qrRegion = html5QrCode._qrRegion; // внутренний контейнер qrbox
+      const qrRegion = html5QrCode._qrRegion;
       if (qrRegion) {
         const newSize = baseQrBox * zoom;
         qrRegion.style.width = `${newSize}px`;
