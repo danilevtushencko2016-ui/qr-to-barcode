@@ -14,26 +14,30 @@ body {
   text-align: center;
   padding: 15px;
 }
+
 #reader {
   width: 100%;
   max-width: 320px;
   margin: auto;
+  position: relative;
+  z-index: 1;
 }
-svg {
-  margin-top: 20px;
-}
-  #zoomRange {
-  width: 90%;
-  max-width: 320px;
+
+#zoomContainer {
+  margin-top: 15px;
   position: relative;
   z-index: 1000;
+}
+
+#zoomRange {
+  width: 90%;
+  max-width: 320px;
   pointer-events: auto;
   touch-action: pan-x;
 }
 
-#reader {
-  position: relative;
-  z-index: 1;
+svg {
+  margin-top: 20px;
 }
 </style>
 </head>
@@ -42,7 +46,11 @@ svg {
 
 <h2>Сканирование QR → Code-128</h2>
 
-<div id="zoomContainer" style="margin-top:15px; position: relative; z-index: 1000;">
+<!-- КОНТЕЙНЕР КАМЕРЫ (ОБЯЗАТЕЛЕН) -->
+<div id="reader"></div>
+
+<!-- ПОЛЗУНОК -->
+<div id="zoomContainer">
   <label for="zoomRange">Зум камеры</label><br>
   <input
     type="range"
@@ -53,7 +61,6 @@ svg {
     value="1"
   >
 </div>
-  
 
 <p><b>Результат QR:</b></p>
 <p id="qr-result">—</p>
@@ -61,13 +68,13 @@ svg {
 <svg id="barcode"></svg>
 
 <script>
+let html5QrCode;
+let currentZoom = 1;
+
 function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
 
-  // Разбиваем строку по ;
   const parts = decodedText.split(";");
-
-  // Берём число после CEN;
   const barcodeValue = parts.length > 1 ? parts[1] : "";
 
   if (!barcodeValue) return;
@@ -77,15 +84,12 @@ function onScanSuccess(decodedText) {
     lineColor: "#000",
     width: 2,
     height: 80,
-    displayValue: true
+    displayValue: true,
+    text: barcodeValue
   });
 }
-const html5QrCode = new Html5Qrcode("reader");
 
-let currentZoom = 1;
-let html5QrCode;
-
-function startCamera(zoom = 1) {
+function startCamera(zoom) {
   if (html5QrCode) {
     html5QrCode.stop().then(() => {
       html5QrCode.clear();
@@ -109,39 +113,16 @@ function initCamera(zoom) {
   );
 }
 
+// ползунок
 const zoomRange = document.getElementById("zoomRange");
-
-zoomRange.disabled = false;
-zoomRange.min = 1;
-zoomRange.max = 4;
-zoomRange.step = 0.1;
-zoomRange.value = 1;
 
 zoomRange.oninput = () => {
   currentZoom = parseFloat(zoomRange.value);
   startCamera(currentZoom);
 };
 
-startCamera(1);
-).then(() => {
-  const videoTrack = html5QrCode._localMediaStream.getVideoTracks()[0];
-  const capabilities = videoTrack.getCapabilities();
-
-  if (capabilities.zoom) {
-    const zoomRange = document.getElementById("zoomRange");
-    zoomRange.min = capabilities.zoom.min;
-    zoomRange.max = capabilities.zoom.max;
-    zoomRange.step = 0.1;
-    zoomRange.value = capabilities.zoom.min;
-    zoomRange.disabled = false;
-
-    zoomRange.oninput = () => {
-      videoTrack.applyConstraints({
-        advanced: [{ zoom: zoomRange.value }]
-      });
-    };
-  }
-});
+// первый запуск камеры
+startCamera(currentZoom);
 </script>
 
 </body>
