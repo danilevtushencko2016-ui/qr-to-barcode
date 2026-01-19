@@ -38,7 +38,7 @@ body {
 #reader video {
   width: 100%;
   height: auto;
-  transition: transform 0.2s ease;
+  display: none; /* видео скрыто на Android, т.к. canvas будет показывать */
 }
 
 #zoom-container {
@@ -55,6 +55,17 @@ datalist {
 }
 datalist option {
   display: block;
+}
+
+#android-tip {
+  color: red;
+  font-size: 14px;
+  display: none;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
 }
 </style>
 </head>
@@ -75,6 +86,8 @@ datalist option {
   <datalist id="zoom-ticks"></datalist>
 </div>
 
+<p id="android-tip">Zoom через ползунок работает на этом устройстве.</p>
+
 <p><b>Результат QR:</b></p>
 <p id="qr-result">—</p>
 
@@ -84,7 +97,11 @@ datalist option {
 let html5QrCode = null;
 let started = false;
 const baseQrBox = 250;
-let lastBarcode = ""; // Для отслеживания повторных сканов
+let lastBarcode = "";
+
+// Для псевдо-zoom на Android
+let canvas = null;
+let ctx = null;
 
 function onScanSuccess(decodedText) {
   const parts = decodedText.split(";");
@@ -96,8 +113,7 @@ function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
 
   const svg = document.getElementById("barcode");
-  svg.innerHTML = ""; // очищаем предыдущий штрихкод
-
+  svg.innerHTML = "";
   JsBarcode(svg, barcodeValue, {
     format: "CODE128",
     width: 2,
@@ -120,67 +136,93 @@ async function startCamera() {
   await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
   const video = document.querySelector("#reader video");
-  if (!video) return;
+  video.style.display = "block"; // показываем видео для iPhone, Android скроет через canvas
   const track = video.srcObject.getVideoTracks()[0];
-
   const capabilities = track.getCapabilities();
   const hasZoom = capabilities.zoom !== undefined;
 
   const slider = document.getElementById("zoom-slider");
   const zoomValue = document.getElementById("zoom-value");
   const datalist = document.getElementById("zoom-ticks");
+  const androidTip = document.getElementById("android-tip");
 
-  let minZoom, maxZoom;
   if (hasZoom) {
-    minZoom = capabilities.zoom.min;
-    maxZoom = capabilities.zoom.max;
-  } else {
-    minZoom = 1;
-    maxZoom = 3;
-  }
+    // Настоящий zoom доступен
+    let minZoom = capabilities.zoom.min;
+    let maxZoom = capabilities.zoom.max;
 
-  slider.min = minZoom;
-  slider.max = maxZoom;
-  slider.step = 0.1;
-  slider.value = minZoom;
-  zoomValue.innerText = slider.value;
+    slider.min = minZoom;
+    slider.max = maxZoom;
+    slider.step = 0.1;
+    slider.value = minZoom;
+    zoomValue.innerText = slider.value;
 
-  datalist.innerHTML = "";
-  const steps = 5;
-  for (let i = 0; i <= steps; i++) {
-    const val = (minZoom + i * (maxZoom - minZoom) / steps).toFixed(1);
-    const option = document.createElement("option");
-    option.value = val;
-    datalist.appendChild(option);
-  }
+    datalist.innerHTML = "";
+    const steps = 5;
+    for (let i = 0; i <= steps; i++) {
+      const val = (minZoom + i * (maxZoom - minZoom) / steps).toFixed(1);
+      const option = document.createElement("option");
+      option.value = val;
+      datalist.appendChild(option);
+    }
 
-  document.getElementById("zoom-container").style.display = "block";
+    document.getElementById("zoom-container").style.display = "block";
 
-  slider.addEventListener("input", async () => {
-    const zoom = parseFloat(slider.value);
-
-    if (hasZoom) {
+    slider.addEventListener("input", async () => {
+      const zoom = parseFloat(slider.value);
       try {
         await track.applyConstraints({ advanced: [{ zoom }] });
       } catch (err) {
         console.log("Ошибка zoom:", err);
       }
-    } else {
-      // CSS визуальный zoom
-      video.style.transform = `scale(${zoom})`;
-      video.style.transformOrigin = "center center";
+      zoomValue.innerText = zoom.toFixed(1);
+    });
+  } else {
+    // Псевдо-zoom через canvas для Android
+    androidTip.style.display = "block";
+    slider.min = 1;
+    slider.max = 3;
+    slider.step = 0.1;
+    slider.value = 1;
+    zoomValue.innerText = slider.value;
+    document.getElementById("zoom-container").style.display = "block";
 
-      // Плавное изменение qrbox без остановки сканера
-      const qrRegion = html5QrCode._qrRegion;
-      if (qrRegion) {
-        const newSize = baseQrBox * zoom;
-        qrRegion.style.width = `${newSize}px`;
-        qrRegion.style.height = `${newSize}px`;
+    // создаём canvas для сканирования
+    canvas = document.createElement("canvas");
+    ctx = canvas.getContext("2d");
+    document.getElementById("reader").appendChild(canvas);
+    video.style.display = "none"; // скрываем исходное видео
+
+    // рисуем и сканируем каждые 100ms
+    let zoom = 1;
+    slider.addEventListener("input", () => {
+      zoom = parseFloat(slider.value);
+      zoomValue.innerText = zoom.toFixed(1);
+    });
+
+    const scanLoop = async () => {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      canvas.width = vw;
+      canvas.height = vh;
+
+      ctx.save();
+      ctx.scale(zoom, zoom);
+      ctx.drawImage(video, 0, 0, vw / zoom, vh / zoom);
+      ctx.restore();
+
+      try {
+        const result = await html5QrCode.scanFileOrCanvas(canvas);
+        if (result) onScanSuccess(result);
+      } catch(e) {
+        // ничего не делать, просто продолжаем скан
       }
-    }
 
-    zoomValue.innerText = zoom.toFixed(1);
-  });
+      requestAnimationFrame(scanLoop);
+    };
+
+    scanLoop();
+  }
 }
 
 document.getElementById("overlay").addEventListener("click", startCamera);
