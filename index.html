@@ -5,6 +5,7 @@
 <title>QR → Code 128</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<!-- Библиотеки -->
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 
@@ -23,8 +24,18 @@ body {
   z-index: 1;
 }
 
+#controls {
+  margin: 10px 0;
+}
+
+#startBtn {
+  font-size: 16px;
+  padding: 10px 20px;
+  margin-bottom: 10px;
+}
+
 #zoomContainer {
-  margin-top: 15px;
+  margin-top: 10px;
   position: relative;
   z-index: 1000;
 }
@@ -32,7 +43,6 @@ body {
 #zoomRange {
   width: 90%;
   max-width: 320px;
-  pointer-events: auto;
   touch-action: pan-x;
 }
 
@@ -46,10 +56,12 @@ svg {
 
 <h2>Сканирование QR → Code-128</h2>
 
-<!-- КОНТЕЙНЕР КАМЕРЫ (ОБЯЗАТЕЛЕН) -->
+<div id="controls">
+  <button id="startBtn">Включить камеру</button>
+</div>
+
 <div id="reader"></div>
 
-<!-- ПОЛЗУНОК -->
 <div id="zoomContainer">
   <label for="zoomRange">Зум камеры</label><br>
   <input
@@ -68,8 +80,9 @@ svg {
 <svg id="barcode"></svg>
 
 <script>
-let html5QrCode;
+let html5QrCode = null;
 let currentZoom = 1;
+let cameraStarted = false;
 
 function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
@@ -90,7 +103,7 @@ function onScanSuccess(decodedText) {
 }
 
 function startCamera(zoom) {
-  if (html5QrCode) {
+  if (cameraStarted && html5QrCode) {
     html5QrCode.stop().then(() => {
       html5QrCode.clear();
       initCamera(zoom);
@@ -110,19 +123,26 @@ function initCamera(zoom) {
     },
     { fps: 10, qrbox: 250 },
     onScanSuccess
-  );
+  ).then(() => {
+    cameraStarted = true;
+  }).catch(err => {
+    alert("Не удалось открыть камеру");
+    console.error(err);
+  });
 }
 
-// ползунок
-const zoomRange = document.getElementById("zoomRange");
-
-zoomRange.oninput = () => {
-  currentZoom = parseFloat(zoomRange.value);
+// кнопка запуска камеры
+document.getElementById("startBtn").addEventListener("click", () => {
   startCamera(currentZoom);
-};
+});
 
-// первый запуск камеры
-startCamera(currentZoom);
+// ползунок зума
+document.getElementById("zoomRange").addEventListener("input", e => {
+  currentZoom = parseFloat(e.target.value);
+  if (cameraStarted) {
+    startCamera(currentZoom);
+  }
+});
 </script>
 
 </body>
