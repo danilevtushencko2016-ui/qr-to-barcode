@@ -32,6 +32,10 @@ body {
   max-width: 320px;
   margin: auto;
 }
+
+#zoom-container {
+  margin: 10px 0;
+}
 </style>
 </head>
 
@@ -45,6 +49,11 @@ body {
 
 <div id="reader"></div>
 
+<div id="zoom-container" style="display:none;">
+  <b>Zoom:</b> <span id="zoom-value">1</span><br>
+  <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1">
+</div>
+
 <p><b>Результат QR:</b></p>
 <p id="qr-result">—</p>
 
@@ -53,6 +62,7 @@ body {
 <script>
 let html5QrCode = null;
 let started = false;
+let stream = null;
 
 function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
@@ -71,18 +81,48 @@ function onScanSuccess(decodedText) {
   });
 }
 
-function startCamera() {
+async function startCamera() {
   if (started) return;
   started = true;
 
   document.getElementById("overlay").style.display = "none";
 
   html5QrCode = new Html5Qrcode("reader");
+
+  // Получаем поток камеры вручную
+  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  const videoTrack = stream.getVideoTracks()[0];
+
+  // Запуск Html5Qrcode с видеотреком
   html5QrCode.start(
-    { facingMode: "environment" },
+    videoTrack,
     { fps: 10, qrbox: 250 },
     onScanSuccess
   );
+
+  // Показываем ползунок zoom
+  const zoomContainer = document.getElementById("zoom-container");
+  zoomContainer.style.display = "block";
+
+  const slider = document.getElementById("zoom-slider");
+  const zoomValue = document.getElementById("zoom-value");
+
+  slider.addEventListener("input", async () => {
+    const capabilities = videoTrack.getCapabilities();
+    let zoom = parseFloat(slider.value);
+
+    // Ограничиваем zoom возможностями камеры
+    if (capabilities.zoom) {
+      zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, zoom));
+      try {
+        await videoTrack.applyConstraints({ advanced: [{ zoom }] });
+      } catch (err) {
+        console.log("Ошибка zoom:", err);
+      }
+    }
+
+    zoomValue.innerText = zoom.toFixed(1);
+  });
 }
 
 // ЛЮБОЕ касание экрана
@@ -92,4 +132,3 @@ document.getElementById("overlay").addEventListener("touchstart", startCamera);
 
 </body>
 </html>
-
