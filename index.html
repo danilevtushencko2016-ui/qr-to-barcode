@@ -62,7 +62,6 @@ body {
 <script>
 let html5QrCode = null;
 let started = false;
-let stream = null;
 
 function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
@@ -89,16 +88,14 @@ async function startCamera() {
 
   html5QrCode = new Html5Qrcode("reader");
 
-  // Получаем поток камеры вручную
-  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-  const videoTrack = stream.getVideoTracks()[0];
+  // Запускаем камеру стандартно через Html5Qrcode
+  const config = { fps: 10, qrbox: 250 };
+  await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
-  // Запуск Html5Qrcode с видеотреком
-  html5QrCode.start(
-    videoTrack,
-    { fps: 10, qrbox: 250 },
-    onScanSuccess
-  );
+  // Получаем видеотрек камеры
+  const video = document.querySelector("#reader video");
+  if (!video) return;
+  const track = video.srcObject.getVideoTracks()[0];
 
   // Показываем ползунок zoom
   const zoomContainer = document.getElementById("zoom-container");
@@ -108,14 +105,13 @@ async function startCamera() {
   const zoomValue = document.getElementById("zoom-value");
 
   slider.addEventListener("input", async () => {
-    const capabilities = videoTrack.getCapabilities();
+    const capabilities = track.getCapabilities();
     let zoom = parseFloat(slider.value);
 
-    // Ограничиваем zoom возможностями камеры
     if (capabilities.zoom) {
       zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, zoom));
       try {
-        await videoTrack.applyConstraints({ advanced: [{ zoom }] });
+        await track.applyConstraints({ advanced: [{ zoom }] });
       } catch (err) {
         console.log("Ошибка zoom:", err);
       }
