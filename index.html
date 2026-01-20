@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>QR → Code 128 (Yandex + Zoom)</title>
+<title>QR → Code 128 (Yandex FIX)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -70,23 +70,20 @@ let lastValue = "";
 let qrScanner = null;
 let cameraTrack = null;
 
-// 🔹 ЛОГИКА "ДО / ПОСЛЕ"
+// 🔹 ТВОЯ ЛОГИКА ДО / ПОСЛЕ
 function transformValue(value) {
-  // ПРИМЕРЫ:
-  // if (!value.startsWith("ABC")) return null;
-  // return value.substring(3) + "-X";
+  // пример:
+  // if (!value.startsWith("01")) return null;
+  // return value.substring(2);
   return value;
 }
 
-// 🔹 Отрисовка штрихкода
+// 🔹 Отрисовка Code-128
 function showBarcode(text) {
-  if (!text || text === lastValue) return;
-
   const transformed = transformValue(text);
-  if (!transformed) return;
+  if (!transformed || transformed === lastValue) return;
 
   lastValue = transformed;
-
   document.getElementById("qr-result").innerText = transformed;
 
   const svg = document.getElementById("barcode");
@@ -100,29 +97,28 @@ function showBarcode(text) {
   });
 }
 
-// 🔹 Запуск камеры
 async function startScanner() {
   document.getElementById("overlay").style.display = "none";
 
   qrScanner = new Html5Qrcode("reader");
 
-  const devices = await Html5Qrcode.getCameras();
-  const cameraId = devices.find(d => d.label.toLowerCase().includes("back"))?.id || devices[0].id;
-
   await qrScanner.start(
-    cameraId,
-    { fps: 10, qrbox: { width: 250, height: 250 } },
-    (decodedText) => showBarcode(decodedText)
+    { facingMode: "environment" },   // ✅ ВСЕГДА ОСНОВНАЯ
+    {
+      fps: 15,                       // увеличили fps
+      disableFlip: true              // ❗ критично для Android
+    },
+    decodedText => showBarcode(decodedText)
   );
 
-  // 🔍 ПОЛУЧАЕМ VIDEO TRACK ДЛЯ ЗУМА
+  // 🔍 ЗУМ
   const video = document.querySelector("#reader video");
-  if (!video) return;
+  const stream = video?.srcObject;
+  if (!stream) return;
 
-  const stream = video.srcObject;
   cameraTrack = stream.getVideoTracks()[0];
-
   const caps = cameraTrack.getCapabilities();
+
   if (caps.zoom) {
     const slider = document.getElementById("zoom-slider");
     const zoomValue = document.getElementById("zoom-value");
