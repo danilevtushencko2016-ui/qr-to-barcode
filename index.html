@@ -25,6 +25,7 @@ body {
   justify-content: center;
   font-size: 18px;
   z-index: 9999;
+  cursor: pointer;
 }
 
 #reader {
@@ -66,8 +67,12 @@ let started = false;
 function onScanSuccess(decodedText) {
   document.getElementById("qr-result").innerText = decodedText;
 
-  const parts = decodedText.split(";");
-  const barcodeValue = parts.length > 1 ? parts[1] : "";
+  // Берем значение между "CEN;" и следующим ";"
+  let barcodeValue = "";
+  const match = decodedText.match(/CEN;([^;]+)/);
+  if (match) {
+    barcodeValue = match[1];
+  }
 
   if (!barcodeValue) return;
 
@@ -88,16 +93,13 @@ async function startCamera() {
 
   html5QrCode = new Html5Qrcode("reader");
 
-  // Запускаем камеру стандартно через Html5Qrcode
   const config = { fps: 10, qrbox: 250 };
   await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
-  // Получаем видеотрек камеры
   const video = document.querySelector("#reader video");
   if (!video) return;
   const track = video.srcObject.getVideoTracks()[0];
 
-  // Показываем ползунок zoom
   const zoomContainer = document.getElementById("zoom-container");
   zoomContainer.style.display = "block";
 
