@@ -2,13 +2,10 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>QR → Code 128 (Yandex)</title>
+<title>QR → Code 128 (Yandex + Zoom)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- QR scanner -->
 <script src="https://unpkg.com/html5-qrcode"></script>
-
-<!-- Barcode generator -->
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 
 <style>
@@ -28,7 +25,6 @@ body {
   justify-content: center;
   font-size: 18px;
   z-index: 9999;
-  cursor: pointer;
 }
 
 #reader {
@@ -37,9 +33,17 @@ body {
   margin: auto;
 }
 
+#zoom-container {
+  display: none;
+  margin: 10px 0;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
 #qr-result {
   word-break: break-all;
-  font-size: 16px;
 }
 </style>
 </head>
@@ -51,6 +55,11 @@ body {
 
 <div id="reader"></div>
 
+<div id="zoom-container">
+  <b>Zoom:</b> <span id="zoom-value">1</span><br>
+  <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1">
+</div>
+
 <p><b>Результат QR:</b></p>
 <p id="qr-result">—</p>
 
@@ -59,17 +68,31 @@ body {
 <script>
 let lastValue = "";
 let qrScanner = null;
+let cameraTrack = null;
 
+// 🔹 ЛОГИКА "ДО / ПОСЛЕ"
+function transformValue(value) {
+  // ПРИМЕРЫ:
+  // if (!value.startsWith("ABC")) return null;
+  // return value.substring(3) + "-X";
+  return value;
+}
+
+// 🔹 Отрисовка штрихкода
 function showBarcode(text) {
   if (!text || text === lastValue) return;
-  lastValue = text;
 
-  document.getElementById("qr-result").innerText = text;
+  const transformed = transformValue(text);
+  if (!transformed) return;
+
+  lastValue = transformed;
+
+  document.getElementById("qr-result").innerText = transformed;
 
   const svg = document.getElementById("barcode");
   svg.innerHTML = "";
 
-  JsBarcode(svg, text, {
+  JsBarcode(svg, transformed, {
     format: "CODE128",
     width: 2,
     height: 80,
@@ -77,24 +100,47 @@ function showBarcode(text) {
   });
 }
 
-function startScanner() {
+// 🔹 Запуск камеры
+async function startScanner() {
   document.getElementById("overlay").style.display = "none";
 
   qrScanner = new Html5Qrcode("reader");
 
-  qrScanner.start(
-    { facingMode: "environment" },
-    {
-      fps: 10,
-      qrbox: { width: 250, height: 250 }
-    },
-    (decodedText) => {
-      showBarcode(decodedText);
-    },
-    () => {}
-  ).catch(err => {
-    alert("Ошибка камеры: " + err);
-  });
+  const devices = await Html5Qrcode.getCameras();
+  const cameraId = devices.find(d => d.label.toLowerCase().includes("back"))?.id || devices[0].id;
+
+  await qrScanner.start(
+    cameraId,
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    (decodedText) => showBarcode(decodedText)
+  );
+
+  // 🔍 ПОЛУЧАЕМ VIDEO TRACK ДЛЯ ЗУМА
+  const video = document.querySelector("#reader video");
+  if (!video) return;
+
+  const stream = video.srcObject;
+  cameraTrack = stream.getVideoTracks()[0];
+
+  const caps = cameraTrack.getCapabilities();
+  if (caps.zoom) {
+    const slider = document.getElementById("zoom-slider");
+    const zoomValue = document.getElementById("zoom-value");
+
+    slider.min = caps.zoom.min;
+    slider.max = caps.zoom.max;
+    slider.step = 0.1;
+    slider.value = caps.zoom.min;
+    zoomValue.innerText = slider.value;
+
+    document.getElementById("zoom-container").style.display = "block";
+
+    slider.oninput = () => {
+      const z = parseFloat(slider.value);
+      zoomValue.innerText = z.toFixed(1);
+      cameraTrack.applyConstraints({ advanced: [{ zoom: z }] });
+    };
+  }
 }
 
 document.getElementById("overlay").addEventListener("click", startScanner);
