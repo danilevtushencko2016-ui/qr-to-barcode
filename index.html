@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>QR → Code 128 (Yandex FIX)</title>
+<title>QR → Code 128</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -34,28 +34,22 @@ body {
 }
 
 #zoom-container {
-  display: none;
   margin: 10px 0;
-}
-
-input[type="range"] {
-  width: 100%;
-}
-
-#qr-result {
-  word-break: break-all;
 }
 </style>
 </head>
+
 <body>
 
-<div id="overlay">Коснитесь экрана, чтобы включить камеру</div>
+<div id="overlay">
+  Коснитесь экрана, чтобы включить камеру
+</div>
 
 <h2>Сканирование QR → Code-128</h2>
 
 <div id="reader"></div>
 
-<div id="zoom-container">
+<div id="zoom-container" style="display:none;">
   <b>Zoom:</b> <span id="zoom-value">1</span><br>
   <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1">
 </div>
@@ -66,81 +60,70 @@ input[type="range"] {
 <svg id="barcode"></svg>
 
 <script>
-let lastValue = "";
-let qrScanner = null;
-let cameraTrack = null;
+let html5QrCode = null;
+let started = false;
 
-// 🔹 ТВОЯ ЛОГИКА ДО / ПОСЛЕ
-function transformValue(value) {
-  // пример:
-  // if (!value.startsWith("01")) return null;
-  // return value.substring(2);
-  return value;
-}
+function onScanSuccess(decodedText) {
+  document.getElementById("qr-result").innerText = decodedText;
 
-// 🔹 Отрисовка Code-128
-function showBarcode(text) {
-  const transformed = transformValue(text);
-  if (!transformed || transformed === lastValue) return;
+  const parts = decodedText.split(";");
+  const barcodeValue = parts.length > 1 ? parts[1] : "";
 
-  lastValue = transformed;
-  document.getElementById("qr-result").innerText = transformed;
+  if (!barcodeValue) return;
 
-  const svg = document.getElementById("barcode");
-  svg.innerHTML = "";
-
-  JsBarcode(svg, transformed, {
+  JsBarcode("#barcode", barcodeValue, {
     format: "CODE128",
     width: 2,
     height: 80,
-    displayValue: true
+    displayValue: true,
+    text: barcodeValue
   });
 }
 
-async function startScanner() {
+async function startCamera() {
+  if (started) return;
+  started = true;
+
   document.getElementById("overlay").style.display = "none";
 
-  qrScanner = new Html5Qrcode("reader");
+  html5QrCode = new Html5Qrcode("reader");
 
-  await qrScanner.start(
-    { facingMode: "environment" },   // ✅ ВСЕГДА ОСНОВНАЯ
-    {
-      fps: 15,                       // увеличили fps
-      disableFlip: true              // ❗ критично для Android
-    },
-    decodedText => showBarcode(decodedText)
-  );
+  // Запускаем камеру стандартно через Html5Qrcode
+  const config = { fps: 10, qrbox: 250 };
+  await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
 
-  // 🔍 ЗУМ
+  // Получаем видеотрек камеры
   const video = document.querySelector("#reader video");
-  const stream = video?.srcObject;
-  if (!stream) return;
+  if (!video) return;
+  const track = video.srcObject.getVideoTracks()[0];
 
-  cameraTrack = stream.getVideoTracks()[0];
-  const caps = cameraTrack.getCapabilities();
+  // Показываем ползунок zoom
+  const zoomContainer = document.getElementById("zoom-container");
+  zoomContainer.style.display = "block";
 
-  if (caps.zoom) {
-    const slider = document.getElementById("zoom-slider");
-    const zoomValue = document.getElementById("zoom-value");
+  const slider = document.getElementById("zoom-slider");
+  const zoomValue = document.getElementById("zoom-value");
 
-    slider.min = caps.zoom.min;
-    slider.max = caps.zoom.max;
-    slider.step = 0.1;
-    slider.value = caps.zoom.min;
-    zoomValue.innerText = slider.value;
+  slider.addEventListener("input", async () => {
+    const capabilities = track.getCapabilities();
+    let zoom = parseFloat(slider.value);
 
-    document.getElementById("zoom-container").style.display = "block";
+    if (capabilities.zoom) {
+      zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, zoom));
+      try {
+        await track.applyConstraints({ advanced: [{ zoom }] });
+      } catch (err) {
+        console.log("Ошибка zoom:", err);
+      }
+    }
 
-    slider.oninput = () => {
-      const z = parseFloat(slider.value);
-      zoomValue.innerText = z.toFixed(1);
-      cameraTrack.applyConstraints({ advanced: [{ zoom: z }] });
-    };
-  }
+    zoomValue.innerText = zoom.toFixed(1);
+  });
 }
 
-document.getElementById("overlay").addEventListener("click", startScanner);
-document.getElementById("overlay").addEventListener("touchstart", startScanner);
+// ЛЮБОЕ касание экрана
+document.getElementById("overlay").addEventListener("click", startCamera);
+document.getElementById("overlay").addEventListener("touchstart", startCamera);
 </script>
 
 </body>
